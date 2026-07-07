@@ -223,4 +223,109 @@ DataTable table = dataSet.Tables[0];
 Console.WriteLine($"Table: {table.TableName}, Rows: {table.Rows.Count}");
 ```
 
+# Extension to convert a DataTable to List<T> using reflection to match column names to properties.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Reflection;
+
+public static class DataTableExtensions
+{
+    /// <summary>
+    /// Converts a DataTable to List<T> using reflection to match column names to properties.
+    /// </summary>
+    /// <typeparam name="T">The type to map each row to.</typeparam>
+    /// <param name="table">The DataTable to convert.</param>
+    /// <returns>List of T populated from the table rows.</returns>
+    public static List<T> ToList<T>(this DataTable table) where T : new()
+    {
+        if (table == null)
+            throw new ArgumentNullException(nameof(table));
+
+        List<T> list = new List<T>();
+        PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (DataRow row in table.Rows)
+        {
+            if (row == null) continue;
+
+            T item = new T();
+
+            foreach (var prop in properties)
+            {
+                if (table.Columns.Contains(prop.Name))
+                {
+                    object value = row[prop.Name];
+
+                    if (value != DBNull.Value && value != null)
+                    {
+                        // Handle nullable types and type conversion
+                        Type targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                        object convertedValue = Convert.ChangeType(value, targetType);
+                        prop.SetValue(item, convertedValue);
+                    }
+                    // else leave as default value (null for reference types, 0/false for value types)
+                }
+            }
+
+            list.Add(item);
+        }
+
+        return list;
+    }
+}
+```
+
+Convenient extension:
+```csharp
+public static class DataSetExtensions
+{
+    /// <summary>
+    /// Gets a specific table from DataSet and converts it to List<T>
+    /// </summary>
+    public static List<T> ToList<T>(this DataSet dataSet, string tableName) where T : new()
+    {
+        if (dataSet == null)
+            throw new ArgumentNullException(nameof(dataSet));
+
+        if (string.IsNullOrEmpty(tableName))
+            throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+
+        if (!dataSet.Tables.Contains(tableName))
+            throw new ArgumentException($"Table '{tableName}' not found in DataSet.");
+
+        return dataSet.Tables[tableName].ToList<T>();
+    }
+
+    /// <summary>
+    /// Converts the first table in the DataSet to List<T>
+    /// </summary>
+    public static List<T> ToList<T>(this DataSet dataSet) where T : new()
+    {
+        if (dataSet == null || dataSet.Tables.Count == 0)
+            throw new ArgumentException("DataSet is null or contains no tables.");
+
+        return dataSet.Tables[0].ToList<T>();
+    }
+}
+```
+
+Usage:
+```csharp
+// From previous DataSet
+DataSet dataSet = people.ToDataSet();
+
+// Option 1: From first table
+List<Person> peopleFromDs = dataSet.ToList<Person>();
+
+// Option 2: From specific table name
+List<Person> peopleFromTable = dataSet.ToList<Person>("Person");
+
+// Option 3: Directly from DataTable
+DataTable table = dataSet.Tables[0];
+List<Person> peopleFromDt = table.ToList<Person>();
+```
+
 
